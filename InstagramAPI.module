@@ -1,0 +1,338 @@
+<?php namespace ProcessWire;
+/**
+ * Facebook API
+ *
+ * Copyright:
+ *
+ * IDT Media - Goran Ilic & Tapio Löytty
+ * Web: www.i-do-this.com
+ * Email: hi@i-do-this.com
+ *
+ *
+ * Authors:
+ *
+ * Goran Ilic, <ja@ich-mach-das.at>
+ * Web: www.ich-mach-das.at
+ * 
+ * Tapio Löytty, <tapsa@orange-media.fi>
+ * Web: www.orange-media.fi
+ *
+ * 
+ * ProcessWire 2.x 
+ * Copyright (C) 2014 by Ryan Cramer 
+ * Licensed under GNU/GPL v2, see LICENSE.TXT
+ * 
+ * http://processwire.com
+ *
+ */
+ 
+use MetzWeb\Instagram\Instagram;
+
+class InstagramAPI extends WireData implements Module, ConfigurableModule
+{
+	#----------------------------------------------------------------
+	# Constants
+	#----------------------------------------------------------------	
+
+	const callback 	= 'instagramapi-callback';	
+	const token 	= 'InstagramAPI.token'; // string
+	
+	#----------------------------------------------------------------
+	# Attributes
+	#----------------------------------------------------------------
+
+	protected $instance;
+	protected $options = [
+		'limit' => 10, 
+		// 'fields' => null,
+		'clientId' => '',
+		'clientSecret' => '',
+	]; 
+
+	#----------------------------------------------------------------
+	# Magic methods
+	#----------------------------------------------------------------	
+	
+	public function __construct() 
+	{
+		require_once(__DIR__ . '/vendor/autoload.php');
+	}
+	
+	#----------------------------------------------------------------
+	# Interface methods: WireData/Wire
+	#----------------------------------------------------------------		
+
+	public function set($key, $value) 
+	{
+		if($key == 'options' && is_array($value)) $this->options = array_merge($this->options, $value); 
+			else if(array_key_exists($key, $this->options)) $this->options[$key] = $value; 
+			else return parent::set($key, $value); 
+
+		return $this;
+	}
+
+	public function get($key) 
+	{
+		if(array_key_exists($key, $this->options)) return $this->options[$key];
+		elseif($key == 'callbackUrl') return $this->getCallbackUrl();
+		elseif($key == 'token') return $this->getToken();		
+		return parent::get($key);
+	}
+
+	protected function ___callUnknown($method, $arguments)
+	{
+		$object = $this->getClient();
+		
+		if(is_object($object)) {		
+
+			$callto = array($object, $method);
+
+			if(is_callable($callto))
+				return call_user_func_array($callto, $arguments);				
+		}	
+		
+		return parent::___callUnknown($method, $arguments);
+	}	
+
+	#----------------------------------------------------------------
+	# Interface methods: Module
+	#----------------------------------------------------------------	
+
+	public static function getModuleInfo() 
+	{
+		return [
+			'title' => 'Instagram API', 
+			'author' => 'IDT Media',
+			'summary' => 'Instagram API', 
+			'version' => 001, 
+			'singular' => true, 
+			'autoload' => true, 
+			'requires' => array('PHP>=5.4')
+		];
+	}	
+	
+	/**
+	 * Run init function
+	 *
+	 */	
+	public function init() {
+
+		$class = $this->className();
+		$conf = $this->getModuleInfo();
+		$version = (int)$conf['version'];
+		
+		if($this->input->name && $this->input->name == $class) {
+			$this->addHookBefore('ProcessModule::executeEdit', function($event) {
+
+				$token = $this->cache->get(self::token);
+				
+				if($this->input->post->submit_authenticate) {
+
+					if($token)
+						$this->cache->delete(self::token);
+					
+					try {
+						$url = $this->getLoginUrl($this->scopes ?: ['basic']);
+						if($url)
+							$this->session->redirect($url);
+					
+					} catch(Exception $e) {
+
+						$event->object->error($e->getMessage());
+					}				
+				}
+				else {
+					
+					if(!$token)
+						$event->object->warning(__('Token is not set, please authenticate'));		
+				}
+			});
+		}
+	}	
+
+	/**
+	 * Install the module
+	 *
+	 */
+	public function ___install() {
+
+		$name = self::callback;
+		$class = $this->className();
+
+		$page = $this->wire('pages')->get("name=$name"); 
+		if($page->id) throw new WireException("There is already a page installed called '/$name/'"); 
+
+		$template = $this->wire('templates')->get($name);
+		if($template) throw new WireException("There is already a template installed called '$name'"); 
+
+		$fieldgroup = $this->wire('fieldgroups')->get($name);
+		if($fieldgroup) throw new WireException("There is already a fieldgroup installed called '$name'"); 
+
+		$fieldgroup = new Fieldgroup();
+		$fieldgroup->name = $name; 
+		$title = $this->wire('fields')->get('title');
+		if($title) $fieldgroup->add($title); 
+		$fieldgroup->save();
+
+		$template = new Template();
+		$template->name = $name;
+		$template->fieldgroup = $fieldgroup; 		
+		$template->save();
+		$this->message("Installed template $name"); 
+
+		$page = new Page();
+		$page->template = $template; 
+		$page->parent = $this->wire('config')->adminRootPageID;
+		$page->name = $name; 
+		$page->title = "InstagramAPI OAuth Callback";
+		$page->addStatus(Page::statusHidden); 
+		$page->save();
+		$this->message("Installed page $page->path"); 
+
+		$basename = $name . ".php";
+		$src = $this->wire('config')->paths->$class . $basename;
+		$dst = $this->wire('config')->paths->templates . $basename;
+		if(@copy($src, $dst)) $this->message("Installed template file $basename"); 
+			else $this->error("Templates directory is not writable so we were unable to auto-install the $basename template file."); 
+	}
+
+	/**
+	 * Uninstall the module
+	 *
+	 */
+	public function ___uninstall() {
+
+		$name = self::callback;
+		$this->cache->delete(self::token);
+
+		$page = $this->wire('pages')->get("template=$name, name=$name"); 
+		if($page->id) {
+			$this->message("Deleted page {$page->path}"); 
+			$this->pages->delete($page);
+		}
+
+		$template = $this->wire('templates')->get($name);
+		if($template) {
+			$this->message("Deleted template $name"); 
+			$this->templates->delete($template); 
+		}
+
+		$fieldgroup = $this->wire('fieldgroups')->get($name);
+		if($fieldgroup) {
+			$this->message("Deleted fieldgroup $name"); 
+			$this->fieldgroups->delete($fieldgroup);
+		}
+
+		$templateFile = $this->wire('config')->paths->templates . $name . ".php";
+		if(is_file($templateFile)) { 
+			if(@unlink($templateFile)) $this->message("Deleted template file $templateFile"); 
+				else $this->error("Unable to remove file '$templateFile', please delete it manually at your convenience."); 
+		}
+	}
+
+	#----------------------------------------------------------------
+	# Class methods
+	#----------------------------------------------------------------			
+
+	// See: https://github.com/cosenary/Instagram-PHP-API		
+
+	#----------------------------------------------------------------
+	# Helpers
+	#----------------------------------------------------------------				
+	
+	protected function getClient(array $options = [], $force = false) 
+	{		
+		if(is_object($this->instance) && !$force)
+			return $this->instance;
+
+		$this->instance = new Instagram([
+			'apiKey'      => $this->clientId,
+			'apiSecret'   => $this->clientSecret,
+			'apiCallback' => $this->getCallbackUrl()
+		]);
+
+		if($token = $this->getToken())
+			$this->instance->setAccessToken($token);		
+		
+		return $this->instance;
+	}			
+
+	protected function getToken()
+	{
+		if($token = $this->cache->get(self::token)) 
+			return $token;
+
+		return null;
+	}	
+
+	protected function getCallbackUrl() {
+		
+		$name = self::callback;
+		$page = $this->pages->get("name=$name");
+		
+		if($this->modules->isInstalled('LanguageSupportPageNames')) {
+			
+			$default = $this->languages->getDefault();		
+			return $page->localHttpUrl($default);		
+		}
+		
+		return $page->httpUrl;
+	}	
+
+	#----------------------------------------------------------------
+	# Interface methods: ConfigurableModule
+	#----------------------------------------------------------------
+	
+	static public function getModuleConfigInputfields(array $data) 
+	{
+		$wrap = new InputfieldWrapper();
+		$form = wire('modules')->get('InputfieldFieldset');
+		$form->label = __('API Authentication'); 	
+		$form->description = __('You may create Facebook application at [https://developers.facebook.com/](https://developers.facebook.com/)'); 
+		
+		$options = [
+			'clientId' 		=> __('Client ID'),
+			'clientSecret' 	=> __('Client Secret'),
+		];	
+		
+		foreach($options as $name => $label) {
+			
+			$f = wire('modules')->get('InputfieldText');
+			$f->attr('name', $name); 
+			$f->label = $label;
+			$f->required = false; 
+			$f->columnWidth = 50;
+			if(isset($data[$name])) $f->attr('value', $data[$name]); 
+			$form->add($f); 	
+		}
+		
+		$field = wire('modules')->get("InputfieldSubmit"); 
+		$field->attr('name', 'submit_authenticate'); 		
+		$field->attr('value', __('Authenticate')); 		
+		$field->addClass('auth-button'); 		
+		$form->add($field);			
+
+		$wrap->add($form);	
+
+		$options = [
+			'basic',
+			'relationships',
+			'likes',
+			'comments',
+		];
+		
+		$scopes = wire('modules')->get('InputfieldAsmSelect'); 
+		$scopes->name = 'scopes';
+		$scopes->label = 'API Scopes';
+		
+		foreach($options as $value) 
+			$scopes->addOption($value); 
+
+		$scopes->value = isset($data['scopes']) ? $data['scopes'] : [];
+		
+		$wrap->add($scopes); 				
+		
+		return $wrap;
+	}
+}
+
