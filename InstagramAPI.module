@@ -43,8 +43,6 @@ class InstagramAPI extends WireData implements Module, ConfigurableModule
 
 	protected $instance;
 	protected $options = [
-		'limit' => 10, 
-		// 'fields' => null,
 		'clientId' => '',
 		'clientSecret' => '',
 	]; 
@@ -107,7 +105,7 @@ class InstagramAPI extends WireData implements Module, ConfigurableModule
 			'version' => 001, 
 			'singular' => true, 
 			'autoload' => true, 
-			'requires' => array('PHP>=5.4')
+			'requires' => array('PHP>=5.6')
 		];
 	}	
 	
