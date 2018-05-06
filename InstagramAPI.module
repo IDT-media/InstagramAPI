@@ -288,7 +288,7 @@ class InstagramAPI extends WireData implements Module, ConfigurableModule
 		$wrap = new InputfieldWrapper();
 		$form = wire('modules')->get('InputfieldFieldset');
 		$form->label = __('API Authentication'); 	
-		$form->description = __('You may create Facebook application at [https://developers.facebook.com/](https://developers.facebook.com/)'); 
+		$form->description = __('You may create Facebook application at [https://www.instagram.com/developer/](https://www.instagram.com/developer/)'); 
 		
 		$options = [
 			'clientId' 		=> __('Client ID'),
