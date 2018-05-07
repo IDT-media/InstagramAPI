@@ -126,8 +126,8 @@ class InstagramAPI extends WireData implements Module, ConfigurableModule
 				
 				if($this->input->post->submit_authenticate) {
 
-					if($token)
-						$this->cache->delete(self::token);
+					// if($token)
+					// 	$this->cache->delete(self::token);
 					
 					try {
 						$url = $this->getLoginUrl($this->scopes ?: ['basic']);
@@ -233,12 +233,21 @@ class InstagramAPI extends WireData implements Module, ConfigurableModule
 	#----------------------------------------------------------------			
 
 	// See: https://github.com/cosenary/Instagram-PHP-API		
+	public function getUserMedia($id, $limit = 0)
+	{
+		$instance = $this->getClient();
+
+		if($token = $this->getToken($id))
+			$instance->setAccessToken($token);
+
+		return $instance->getUserMedia($id, $limit);
+	}
 
 	#----------------------------------------------------------------
 	# Helpers
 	#----------------------------------------------------------------				
 	
-	protected function getClient(array $options = [], $force = false) 
+	protected function getClient($force = false) 
 	{		
 		if(is_object($this->instance) && !$force)
 			return $this->instance;
@@ -255,10 +264,10 @@ class InstagramAPI extends WireData implements Module, ConfigurableModule
 		return $this->instance;
 	}			
 
-	protected function getToken()
+	protected function getToken($id = null)
 	{
-		if($token = $this->cache->get(self::token)) 
-			return $token;
+		if($tokens = $this->cache->get(self::token)) 
+			return !is_null($id) ? $tokens[$id] : $tokens[0];
 
 		return null;
 	}	
@@ -317,6 +326,7 @@ class InstagramAPI extends WireData implements Module, ConfigurableModule
 			'relationships',
 			'likes',
 			'comments',
+			'public_content',
 		];
 		
 		$scopes = wire('modules')->get('InputfieldAsmSelect'); 

@@ -71,7 +71,7 @@ class Instagram {
    *
    * @var array
    */
-  private $_scopes = array('basic', 'likes', 'comments', 'relationships');
+  private $_scopes = array('basic', 'likes', 'comments', 'relationships', 'public_content');
 
   /**
    * Available actions
@@ -132,9 +132,9 @@ class Instagram {
    * @return mixed
    */
   public function getUser($id = 0) {
-    $auth = false;
-    if ($id === 0 && isset($this->_accesstoken)) { $id = 'self'; $auth = true; }
-    return $this->_makeCall('users/' . $id, $auth);
+    // $auth = false;
+    if ($id === 0 && isset($this->_accesstoken)) { $id = 'self'; /*$auth = true;*/ }
+    return $this->_makeCall('users/' . $id, true);
   }
 
   /**
@@ -155,7 +155,7 @@ class Instagram {
    * @return mixed
    */
   public function getUserMedia($id = 'self', $limit = 0) {
-    return $this->_makeCall('users/' . $id . '/media/recent', ($id === 'self'), array('count' => $limit));
+    return $this->_makeCall('users/' . $id . '/media/recent', true, array('count' => $limit));
   }
 
   /**
